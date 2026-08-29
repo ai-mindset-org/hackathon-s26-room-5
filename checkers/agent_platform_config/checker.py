@@ -264,6 +264,26 @@ def check(inputs: dict[str, str]) -> Report:
     if litellm:
         report.findings.extend(_litellm_defects(litellm))
 
+    # ── П13: routing против секций провайдеров (критерий заказчика B5) ─────
+    # «У каждой модели с routing = [...] есть соответствующая секция
+    # [models.X.providers.Y] для каждого провайдера из списка».
+    # Без секции маршрут указывает в пустоту: гейтвей не знает, куда идти.
+    for match in re.finditer(r"\[((?:models|embedding_models)\.[\w-]+)\]([\s\S]*?)(?=\n\s*\[|\Z)", values):
+        section, body = match.group(1), match.group(2)
+        routing = re.search(r"routing\s*=\s*\[([^\]]*)\]", body)
+        if not routing:
+            continue
+        for provider in re.findall(r'"([\w-]+)"', routing.group(1)):
+            if f"[{section}.providers.{provider}]" not in values:
+                report.findings.append(Finding(
+                    rule_id="П13",
+                    rule_text="у каждого провайдера из routing есть секция [<модель>.providers.<провайдер>]",
+                    where=f"[{section}]",
+                    quote=f'routing = [... "{provider}" ...]',
+                    what=(f"маршрут ведёт на провайдера {provider}, а секции "
+                          f"[{section}.providers.{provider}] нет — гейтвею некуда идти"),
+                ))
+
     # ── что проверено и признано нормой ────────────────────────────────────
     # Без этого раздела «не поймали» неотличимо от «не проверяли»,
     # а заказчик читает отчёт именно на этот вопрос.
