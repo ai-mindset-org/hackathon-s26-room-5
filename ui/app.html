@@ -1,0 +1,564 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Проверка перед сдачей</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#EEF1F4; --surface:#FFFFFF; --sunk:#E3E8ED;
+  --ink:#0F171E; --ink-2:#42505E; --muted:#6E7C8A;
+  --line:#D3DBE3; --line-2:#BCC7D2;
+  --accent:#0B5FA8; --accent-soft:#E4EEF8;
+  --bad:#A82018; --bad-soft:#FBE9E7;
+  --warn:#8A5A00; --warn-soft:#FBF1DE;
+  --good:#1F6146; --good-soft:#E4F1EA;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0D1319; --surface:#141C24; --sunk:#101820;
+  --ink:#E6ECF2; --ink-2:#AEBCC9; --muted:#7C8B99;
+  --line:#243040; --line-2:#33445A;
+  --accent:#6BA8E8; --accent-soft:#152634;
+  --bad:#F08379; --bad-soft:#2A1614;
+  --warn:#E0AC5C; --warn-soft:#291F10;
+  --good:#67C79C; --good-soft:#12241C;
+}}
+:root[data-theme="dark"]{
+  --ground:#0D1319; --surface:#141C24; --sunk:#101820;
+  --ink:#E6ECF2; --ink-2:#AEBCC9; --muted:#7C8B99;
+  --line:#243040; --line-2:#33445A;
+  --accent:#6BA8E8; --accent-soft:#152634;
+  --bad:#F08379; --bad-soft:#2A1614;
+  --warn:#E0AC5C; --warn-soft:#291F10;
+  --good:#67C79C; --good-soft:#12241C;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Golos Text","Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.5}
+code,pre,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+button{font:inherit;color:inherit}
+.label{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+h1,h2,h3{margin:0;text-wrap:balance}
+
+header{background:var(--surface);border-bottom:1px solid var(--line);
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:100% 36px,36px 100%;background-position:-1px -1px}
+.hbar{max-width:1240px;margin:0 auto;padding:22px 24px;display:flex;gap:24px;
+  align-items:center;flex-wrap:wrap}
+h1{font-size:25px;font-weight:600;letter-spacing:-.015em}
+.sub{color:var(--ink-2);font-size:14px;margin-top:3px;max-width:60ch}
+.badge{margin-left:auto;border:2px solid var(--accent);border-radius:3px;background:var(--surface);
+  padding:9px 16px;text-align:center;min-width:120px}
+.badge .n{font-family:"IBM Plex Mono",monospace;font-size:22px;font-weight:500;
+  font-variant-numeric:tabular-nums;line-height:1.15}
+.badge .n em{font-style:normal;color:var(--muted)}
+
+/* задача и план */
+.brief{max-width:1240px;margin:0 auto;padding:0 24px}
+details.brief-box{background:var(--surface);border:1px solid var(--line);border-radius:3px;
+  margin-top:18px}
+details.brief-box>summary{padding:13px 18px;cursor:pointer;list-style:none;display:flex;
+  gap:12px;align-items:center;font-weight:500}
+details.brief-box>summary::-webkit-details-marker{display:none}
+details.brief-box>summary::before{content:"▸";color:var(--muted);font-size:12px}
+details.brief-box[open]>summary::before{content:"▾"}
+details.brief-box>summary:hover{background:var(--sunk)}
+.brief-body{padding:4px 18px 20px;border-top:1px solid var(--line)}
+.cols{display:grid;gap:26px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));margin-top:16px}
+.cols h3{font-size:15px;margin-bottom:8px}
+.cols p{margin:0 0 10px;color:var(--ink-2);font-size:14px}
+ol.steps{margin:8px 0 0;padding-left:0;list-style:none;counter-reset:s}
+ol.steps li{counter-increment:s;padding:8px 0 8px 34px;position:relative;
+  border-bottom:1px solid var(--line);font-size:14px}
+ol.steps li:last-child{border-bottom:0}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:8px;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent);
+  border:1px solid var(--line-2);border-radius:2px;width:22px;height:22px;
+  display:grid;place-items:center}
+ol.steps b{font-weight:500}
+ol.steps .done{color:var(--good);font-family:"IBM Plex Mono",monospace;font-size:11px}
+
+/* рабочая зона */
+main{max-width:1240px;margin:0 auto;padding:22px 24px 80px;
+  display:grid;gap:20px;grid-template-columns:330px minmax(0,1fr)}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:3px}
+.panel-h{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;gap:10px}
+.panel-b{padding:14px 16px}
+
+.ex-btn{display:block;width:100%;text-align:left;background:transparent;border:0;
+  border-bottom:1px solid var(--line);padding:12px 16px;cursor:pointer}
+.ex-btn:last-of-type{border-bottom:0}
+.ex-btn:hover{background:var(--sunk)}
+.ex-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ex-btn.on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.ex-btn .t{font-weight:500}
+.ex-btn .fl{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  margin-top:3px;word-break:break-all}
+
+.drop{margin:14px 16px 16px;border:1.5px dashed var(--line-2);border-radius:3px;
+  padding:18px 14px;text-align:center;color:var(--muted);font-size:13.5px;cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.drop b{display:block;color:var(--ink);font-weight:500;margin-bottom:4px;font-size:14px}
+.drop.has{border-style:solid;border-color:var(--good);color:var(--ink-2);text-align:left}
+
+.tabs{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{background:transparent;border:0;border-bottom:2px solid transparent;padding:11px 12px;
+  cursor:pointer;color:var(--muted);font-size:13.5px}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
+.tab .c{font-family:"IBM Plex Mono",monospace;font-size:11px;margin-left:5px}
+
+.sum{display:flex;gap:10px;flex-wrap:wrap;padding:14px 16px 0}
+.stat{border:1px solid var(--line);border-radius:3px;padding:9px 13px;min-width:96px}
+.stat .n{font-family:"IBM Plex Mono",monospace;font-size:21px;font-variant-numeric:tabular-nums;
+  line-height:1.15}
+.stat.bad{border-color:var(--bad);background:var(--bad-soft)} .stat.bad .n{color:var(--bad)}
+.stat.warn{border-color:var(--warn);background:var(--warn-soft)} .stat.warn .n{color:var(--warn)}
+.stat.good{border-color:var(--good);background:var(--good-soft)} .stat.good .n{color:var(--good)}
+
+.f{border:1px solid var(--line);border-left-width:3px;border-radius:3px;padding:13px 15px;
+  margin:10px 16px}
+.f.viol{border-left-color:var(--bad)} .f.ques{border-left-color:var(--warn)}
+.fh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.rid{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:3px 7px;border-radius:2px}
+.viol .rid{background:var(--bad-soft);color:var(--bad)}
+.ques .rid{background:var(--warn-soft);color:var(--warn)}
+.where{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2);word-break:break-all}
+.what{margin-top:8px;font-weight:500}
+.quote{margin:9px 0 0;padding:9px 11px;background:var(--sunk);border-radius:2px;font-size:12px;
+  overflow-x:auto;white-space:pre-wrap;word-break:break-word;color:var(--ink-2)}
+.rulet{font-size:12.5px;color:var(--muted);margin-top:7px}
+.ok-list{margin:0;padding:10px 16px 16px;list-style:none}
+.ok-list li{padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--ink-2);
+  display:flex;gap:9px}
+.ok-list li:last-child{border-bottom:0}
+.ok-list .m{color:var(--good);font-family:"IBM Plex Mono",monospace}
+pre.art{margin:12px 16px;padding:13px 15px;background:var(--sunk);border-radius:3px;
+  font-size:12.5px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+.art-h{padding:12px 16px 0;font-weight:500;display:flex;gap:10px;align-items:baseline}
+.empty{padding:26px 16px;color:var(--muted);text-align:center}
+.hint{padding:12px 16px;color:var(--muted);font-size:13px}
+.chk{display:flex;gap:10px;padding:8px 16px;font-size:13.5px;border-bottom:1px solid var(--line)}
+.chk .m{font-family:"IBM Plex Mono",monospace;flex:0 0 12px}
+.chk.y .m{color:var(--good)} .chk.n .m{color:var(--bad)}
+.chk .why{color:var(--muted)}
+.exp-row{padding:11px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;
+  align-items:center}
+.pill{font-family:"IBM Plex Mono",monospace;font-size:11px;padding:3px 8px;border-radius:2px;
+  border:1px solid var(--good);background:var(--good-soft);color:var(--good)}
+.pill.no{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+.spin{padding:26px 16px;color:var(--muted);text-align:center}
+
+.verdict{padding:14px 16px 0;display:flex;gap:12px;align-items:flex-start}
+.verdict .txt{flex:1}
+.verdict h3{font-size:17px;font-weight:600;margin-bottom:3px}
+.verdict p{margin:0;font-size:13.5px;color:var(--muted)}
+.verdict.bad h3{color:var(--bad)} .verdict.warn h3{color:var(--warn)} .verdict.good h3{color:var(--good)}
+.dl{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
+  border-radius:2px;padding:7px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.dl:hover{border-color:var(--accent);color:var(--accent)}
+
+/* инспект: файл с подсветкой */
+.insp-files{display:flex;gap:2px;padding:10px 16px 0;flex-wrap:wrap}
+.insp-files button{background:var(--sunk);border:1px solid var(--line);border-radius:2px;
+  padding:5px 10px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;cursor:pointer;
+  color:var(--ink-2)}
+.insp-files button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.code{margin:12px 16px 16px;border:1px solid var(--line);border-radius:3px;overflow:auto;
+  max-height:520px;background:var(--sunk)}
+.code table{border-collapse:collapse;width:100%;font-family:"IBM Plex Mono",monospace;
+  font-size:12.5px}
+.code td{padding:2px 10px;vertical-align:top;white-space:pre-wrap;word-break:break-word}
+.code td.ln{width:1%;text-align:right;color:var(--muted);user-select:none;
+  border-right:1px solid var(--line);background:var(--surface);font-variant-numeric:tabular-nums}
+.code tr.hit-viol td{background:var(--bad-soft)}
+.code tr.hit-viol td.ln{color:var(--bad);font-weight:500;box-shadow:inset -2px 0 0 var(--bad)}
+.code tr.hit-ques td{background:var(--warn-soft)}
+.code tr.hit-ques td.ln{color:var(--warn);font-weight:500;box-shadow:inset -2px 0 0 var(--warn)}
+.code tr.plant td.ln{box-shadow:inset -2px 0 0 var(--accent);color:var(--accent)}
+.code tr.bait td.ln{box-shadow:inset -2px 0 0 var(--good);color:var(--good)}
+.code tr.flash td{animation:flash 1.1s ease}
+@keyframes flash{0%{background:var(--accent-soft)}100%{}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 16px;font-size:12.5px;color:var(--muted)}
+.legend i{font-style:normal;display:inline-block;width:9px;height:9px;border-radius:1px;
+  margin-right:5px;vertical-align:middle}
+.f.clickable{cursor:pointer}
+.f.clickable:hover{border-color:var(--accent-soft);background:var(--sunk)}
+
+/* генератор */
+.gen{margin:14px 16px 16px;border:1px solid var(--line-2);border-radius:3px;padding:14px}
+.gen h4{margin:0 0 4px;font-size:14px;font-weight:600}
+.gen p{margin:0 0 11px;font-size:13px;color:var(--muted)}
+.gen select,.gen input{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);
+  border-radius:2px;background:var(--surface);color:var(--ink);width:100%;margin-bottom:8px}
+.gen button{width:100%;padding:9px;border:1px solid var(--accent);background:var(--accent);
+  color:#fff;border-radius:2px;cursor:pointer;font-size:13.5px;font-weight:500}
+.gen button:hover{filter:brightness(1.08)}
+:root[data-theme="dark"] .gen button,
+@media (prefers-color-scheme:dark){.gen button{color:#0D1319}}
+
+/* таблица сравнения */
+.cmp-row{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line);
+  align-items:flex-start;font-size:14px}
+.cmp-row:last-child{border-bottom:0}
+.tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 8px;border-radius:2px;white-space:nowrap;flex:0 0 auto}
+.tag.found{background:var(--good-soft);color:var(--good);border:1px solid var(--good)}
+.tag.missed{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad)}
+.tag.false{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad)}
+.tag.beyond{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+.cmp-row .src{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);
+  margin-top:3px;word-break:break-all}
+.cmp-head{padding:13px 16px 4px;font-weight:500;font-size:13.5px;color:var(--ink-2)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header>
+  <div class="hbar">
+    <div>
+      <div class="label">Хакатон AI Mindset S26 · комната 5</div>
+      <h1>Проверка артефакта до сдачи</h1>
+      <div class="sub">Слева — что проверяем. Справа — что нашли: правило, место, цитата.
+        Пропускать или нет, решаете вы.</div>
+    </div>
+    <div class="badge">
+      <div class="label">Приёмка</div>
+      <div class="n" id="acc">…</div>
+      <div class="label" style="letter-spacing:.04em;text-transform:none">примеров прошло</div>
+    </div>
+  </div>
+</header>
+
+<div class="brief">
+  <details class="brief-box">
+    <summary>Задача комнаты и план, по которому собрано</summary>
+    <div class="brief-body">
+      <div class="cols">
+        <div>
+          <h3>Что просили сделать</h3>
+          <p>Перед сдачей артефакт проверяют глазами: чертежи перед производством,
+            конфиги перед выкаткой, документы перед передачей наружу. Проверка скучная,
+            ошибка дорогая, а правила живут в опыте проверяющего.</p>
+          <p>Нужен инструмент: на входе артефакт и чеклист правил, на выходе отчёт
+            о расхождениях с точным указанием мест. Решение остаётся за человеком.</p>
+          <h3 style="margin-top:16px">Правило, которое всё определило</h3>
+          <p>Ложная тревога проваливает приёмку так же, как пропуск. Поэтому у каждого
+            модуля отдельно проверяется, на что он срабатывать <b>не должен</b>.</p>
+        </div>
+        <div>
+          <h3>План, по которому шёл</h3>
+          <ol class="steps">
+            <li><b>Интервью с заказчиками.</b> Вопросы и запись — в <code>docs/</code>.
+              Главное, что выяснилось: чеклиста ни у кого нет, правила в голове. <span class="done">сделано</span></li>
+            <li><b>Контракт находки.</b> Правило · место · цитата · что не так · что сделать.
+              Один формат на все модули. <span class="done">сделано</span></li>
+            <li><b>Пять модулей.</b> Каждый закрывает свой тип артефакта и знает,
+              на что не срабатывать. <span class="done">сделано</span></li>
+            <li><b>Машинная приёмка.</b> «Прошло N из M» считается само, а не глазами.
+              <span class="done">5 из 5</span></li>
+            <li><b>Это приложение.</b> Чтобы проверку запускал человек, а не команда
+              в терминале. <span class="done">вы в нём</span></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<main>
+  <div>
+    <div class="panel">
+      <div class="panel-h"><span class="label">Что проверяем</span></div>
+      <div id="examples"><div class="spin">загружаю…</div></div>
+      <div class="gen">
+        <h4>Проверка на незнакомом файле</h4>
+        <p>Собрать артефакт с дефектами, о которых инструмент не знает,
+           и посмотреть, что он поймает, а что проспит.</p>
+        <select id="gkind"></select>
+        <input id="gnum" type="number" min="1" max="6" value="4" title="сколько дефектов заложить">
+        <button id="gbtn">Сгенерировать и проверить</button>
+      </div>
+      <div class="drop" id="drop">
+        <b>Свои файлы</b>
+        перетащите сюда артефакт и чеклист<br>или нажмите, чтобы выбрать
+        <input type="file" id="file" multiple hidden>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-h"><span class="label">Что понимает</span></div>
+      <div class="panel-b" style="font-size:13.5px;color:var(--ink-2)">
+        <p style="margin:0 0 9px"><b>документ + чеклист</b> — .md с правилами и текст под проверку</p>
+        <p style="margin:0 0 9px"><b>конфиг + правила</b> — .env и файл с правилами безопасности</p>
+        <p style="margin:0 0 9px"><b>две таблицы</b> — .csv замеров и .csv допусков</p>
+        <p style="margin:0 0 9px"><b>текст наружу</b> — .txt для обезличивания</p>
+        <p style="margin:0"><b>платформа агентов</b> — .yaml litellm и tensorzero</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="out">
+    <div class="panel-h"><span class="label">Отчёт</span></div>
+    <div class="empty">Выберите артефакт слева или перетащите свои файлы.</div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+function plural(n, one, few, many){
+  const m10 = n % 10, m100 = n % 100;
+  if(m10 === 1 && m100 !== 11) return one;
+  if(m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+let lastRun = null;   // что скачивать
+let current = null, acceptance = null;
+
+async function boot(){
+  const [ex, acc] = await Promise.all([
+    fetch('/api/examples').then(r=>r.json()),
+    fetch('/api/acceptance').then(r=>r.json())
+  ]);
+  acceptance = acc;
+  $('#acc').innerHTML = `${acc.passed}<em>/${acc.total}</em>`;
+  $('#examples').innerHTML = ex.map(e=>{
+    const a = acc.results.find(r=>r.example===e.id);
+    const mark = a ? `<span class="pill ${a.passed?'':'no'}" title="${esc(a.details)}">${a.passed?'прошёл':a.status.toLowerCase()}</span>` : '';
+    return `<button class="ex-btn" data-id="${e.id}">
+      <div style="display:flex;gap:10px;align-items:baseline">
+        <span class="t">${e.title}</span><span style="margin-left:auto">${mark}</span></div>
+      <div class="fl">${e.files.join(' · ')}</div></button>`;
+  }).join('');
+  document.querySelectorAll('.ex-btn').forEach(b=>
+    b.onclick = ()=>runExample(b.dataset.id, b));
+}
+
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+async function runExample(id, btn){
+  document.querySelectorAll('.ex-btn').forEach(b=>b.classList.toggle('on', b===btn));
+  $('#drop').classList.remove('has');
+  $('#out').innerHTML = '<div class="panel-h"><span class="label">Отчёт</span></div><div class="spin">проверяю…</div>';
+  const r = await fetch('/api/run-example',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({id})}).then(r=>r.json());
+  current = id;
+  render(r, id, null, null);
+}
+
+async function runFiles(files){
+  $('#out').innerHTML = '<div class="panel-h"><span class="label">Отчёт</span></div><div class="spin">проверяю…</div>';
+  const payload = {};
+  for (const f of files) payload[f.name] = await f.text();
+  const r = await fetch('/api/run',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({files:payload})}).then(r=>r.json());
+  document.querySelectorAll('.ex-btn').forEach(b=>b.classList.remove('on'));
+  render(r, null, null, null);
+}
+
+function render(r, exampleId, cmp, gen){
+  if(r.error){ $('#out').innerHTML = head() + `<div class="empty">${esc(r.error)}</div>`; return; }
+  if(!r.checkers.length){
+    $('#out').innerHTML = head() + `<div class="empty">Ни один модуль не взялся за эти файлы.<br>
+      <span style="font-size:13px">Пришло: ${r.files.map(esc).join(', ')||'ничего'}</span></div>`;
+    return;
+  }
+  const c = r.counts;
+  const viol = r.findings.filter(f=>f.severity==='нарушение');
+  const ques = r.findings.filter(f=>f.severity==='вопрос');
+  const acc = exampleId && acceptance ? acceptance.results.find(x=>x.example===exampleId) : null;
+  const sources = r.sources || {};
+
+  function head(){ return `<div class="panel-h"><span class="label">Отчёт</span>
+    <span style="margin-left:auto" class="label">${r.checkers.map(x=>esc(x.title)).join(' · ')}</span></div>`; }
+
+  const card = f => `<div class="f ${f.severity==='нарушение'?'viol':'ques'} clickable"
+      data-file="${esc(f.file||'')}" data-line="${f.line||0}">
+      <div class="fh"><span class="rid">${esc(f.rule_id)}</span><span class="where">${esc(f.where)}</span></div>
+      <div class="what">${esc(f.what)}</div>
+      ${f.quote?`<pre class="quote">${esc(f.quote)}</pre>`:''}
+      <div class="rulet">правило: ${esc(f.rule_text)}</div>
+      ${f.hint?`<div class="rulet" style="color:var(--accent)">→ ${esc(f.hint)}</div>`:''}
+    </div>`;
+
+  // ── инспект: файл со строками и подсветкой
+  const marks = {};   // file -> line -> класс
+  for(const f of r.findings){
+    if(!f.file || !f.line) continue;
+    (marks[f.file] = marks[f.file] || {})[f.line] = f.severity==='нарушение'?'hit-viol':'hit-ques';
+  }
+  if(gen){
+    const main = Object.keys(sources).find(n=>!/rule|checklist|правил|чеклист|toleran|допуск/i.test(n)) || Object.keys(sources)[0];
+    for(const b of (cmp?.bait||[])){
+      marks[main] = marks[main] || {};
+      if(!marks[main][b.line]) marks[main][b.line] = 'bait';
+    }
+    for(const pl of (gen.planted||[])){
+      marks[main] = marks[main] || {};
+      if(!marks[main][pl.line]) marks[main][pl.line] = 'plant';
+    }
+  }
+  const fileNames = Object.keys(sources);
+  function inspectPane(active){
+    if(!fileNames.length) return '<div class="empty">Исходники недоступны.</div>';
+    const name = active || fileNames[0];
+    const rows = (sources[name]||'').split('\n').map((line,i)=>{
+      const n = i+1, cls = (marks[name]||{})[n] || '';
+      return `<tr class="${cls}" id="L${n}"><td class="ln">${n}</td><td>${esc(line)||' '}</td></tr>`;
+    }).join('');
+    return `<div class="insp-files">${fileNames.map(f=>
+        `<button class="${f===name?'on':''}" data-f="${esc(f)}">${esc(f)}</button>`).join('')}</div>
+      <div class="legend">
+        <span><i style="background:var(--bad)"></i>нарушение</span>
+        <span><i style="background:var(--warn)"></i>вопрос</span>
+        ${gen?'<span><i style="background:var(--accent)"></i>заложено, не поймано</span>'+
+              '<span><i style="background:var(--good)"></i>приманка — трогать нельзя</span>':''}
+      </div>
+      <div class="code"><table>${rows}</table></div>`;
+  }
+
+  // ── сравнение с планом (только для сгенерированных файлов)
+  let cmpPane = '';
+  if(cmp){
+    const s = cmp.score;
+    const rows = cmp.plan.map(p=>`<div class="cmp-row">
+        <span class="tag ${p.status==='найдено'?'found':'missed'}">${p.status}</span>
+        <div><div>${esc(p.what)}</div><div class="src">строка ${p.line}: ${esc(p.text)}</div></div>
+      </div>`).join('');
+    const extra = cmp.extra.map(e=>`<div class="cmp-row">
+        <span class="tag ${e.status==='ложная'?'false':'beyond'}">${e.status}</span>
+        <div><div>${esc(e.finding.what)}</div>
+        <div class="src">${esc(e.finding.where)}: ${esc(e.finding.quote||'')}</div>
+        ${e.bait_why?`<div class="src" style="color:var(--bad)">приманка: ${esc(e.bait_why)}</div>`:''}</div>
+      </div>`).join('');
+    cmpPane = `<div class="cmp-head">Заложено дефектов: ${s.planted} · поймано ${s.found} ·
+        пропущено ${s.missed} · приманок ${s.baits} · ложных тревог ${s.false_alarms}</div>
+      ${rows}
+      ${extra?`<div class="cmp-head">Находки вне плана</div>${extra}`:''}`;
+  }
+
+  const tabs = [];
+  if(cmp) tabs.push(['cmp','Заложено против найденного', cmp.score.planted]);
+  tabs.push(['viol','Нарушения',viol.length], ['ques','Вопросы',ques.length],
+            ['insp','Инспект',fileNames.length], ['ok','Проверено и норма',c.checked]);
+  if(Object.keys(r.artifacts||{}).length) tabs.push(['art','Выданные файлы',Object.keys(r.artifacts).length]);
+  if(acc) tabs.push(['acc','Приёмка',acc.passed?'✓':'~']);
+
+  const panes = {
+    cmp: cmpPane,
+    viol: viol.length ? viol.map(card).join('') : '<div class="empty">Нарушений нет.</div>',
+    ques: ques.length ? ques.map(card).join('') : '<div class="empty">Вопросов к человеку нет.</div>',
+    insp: inspectPane(),
+    ok: c.checked ? `<ul class="ok-list">${r.checked.map(x=>`<li><span class="m">✓</span><span>${esc(x)}</span></li>`).join('')}</ul>`
+        : '<div class="empty">Пусто.</div>',
+    art: Object.entries(r.artifacts||{}).map(([n,v])=>
+        `<div class="art-h">${esc(n)}</div><pre class="art">${esc(v)}</pre>`).join(''),
+    acc: acc ? `<div class="chk ${acc.passed?'y':'n'}"><span class="m">${acc.passed?'✓':'~'}</span>
+        <span><b>${esc(acc.status)}</b><span class="why"> — ${esc(acc.details)}</span></span></div>
+        <div class="hint">Это официальная сверка комнаты: раннер ищет в отчёте якоря из
+        expected.md — цитаты, имена ключей и числа, которые назвал заказчик.
+        Та же команда, что гоняют на демо: <code>python3 -m runner</code>.</div>` : '',
+  };
+  if(r.notes && r.notes.length)
+    panes.ok += `<div class="hint"><b>Машина не проверяла:</b><br>${r.notes.map(esc).join('<br>')}</div>`;
+
+  const s2 = cmp ? cmp.score : null;
+  const vcls = viol.length ? 'bad' : (ques.length ? 'warn' : 'good');
+  const vtitle = viol.length
+      ? `Перед сдачей есть что исправить: ${viol.length} ${plural(viol.length,'нарушение','нарушения','нарушений')}`
+      : (ques.length
+         ? `Нарушений нет, но ${ques.length} ${plural(ques.length,'место требует','места требуют','мест требуют')} вашего решения`
+         : 'Замечаний нет');
+  const vtext = viol.length
+      ? 'Каждое нарушение ниже с точным местом и цитатой. Решение, править или пропустить, за вами.'
+      : (ques.length ? 'Машина не берётся утверждать, что это ошибки: посмотрите глазами.'
+                     : 'Все правила проверены, расхождений не найдено.');
+
+  $('#out').innerHTML = head() + `
+    <div class="verdict ${vcls}">
+      <div class="txt"><h3>${vtitle}</h3><p>${vtext}</p></div>
+      <button class="dl" id="dl">Скачать отчёт .md</button>
+    </div>
+    <div class="sum">
+      <div class="stat ${viol.length?'bad':'good'}"><div class="n">${viol.length}</div><div class="label">нарушений</div></div>
+      <div class="stat ${ques.length?'warn':''}"><div class="n">${ques.length}</div><div class="label">вопросов</div></div>
+      <div class="stat good"><div class="n">${c.checked}</div><div class="label">чисто</div></div>
+      ${s2?`<div class="stat ${s2.missed?'bad':'good'}"><div class="n">${s2.found}/${s2.planted}</div><div class="label">поймано из плана</div></div>
+           <div class="stat ${s2.false_alarms?'bad':'good'}"><div class="n">${s2.false_alarms}</div><div class="label">ложных тревог</div></div>`:''}
+      ${acc?`<div class="stat ${acc.passed?'good':'warn'}"><div class="n">${acc.passed?'✓':'~'}</div><div class="label">приёмка</div></div>`:''}
+    </div>
+    <div class="tabs">${tabs.map(([k,t,n],i)=>
+      `<button class="tab ${i===0?'on':''}" data-p="${k}">${t}<span class="c">${n}</span></button>`).join('')}</div>
+    <div id="pane">${panes[tabs[0][0]]}</div>`;
+
+  function wire(){
+    document.querySelectorAll('.insp-files button').forEach(b=>b.onclick=()=>{
+      $('#pane').innerHTML = inspectPane(b.dataset.f); wire();
+    });
+    document.querySelectorAll('.f.clickable').forEach(el=>el.onclick=()=>{
+      const file = el.dataset.file, line = +el.dataset.line;
+      if(!file || !line) return;
+      document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on', x.dataset.p==='insp'));
+      $('#pane').innerHTML = inspectPane(file); wire();
+      const row = document.getElementById('L'+line);
+      if(row){ row.classList.add('flash'); row.scrollIntoView({block:'center', behavior:'smooth'}); }
+    });
+  }
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+    $('#pane').innerHTML = panes[t.dataset.p] || '<div class="empty">Пусто.</div>';
+    wire();
+  });
+  lastRun = {title: (r.checkers[0]||{}).title || 'проверка', result: r,
+             compare: cmp, generated: gen, acceptance: acc};
+  const dl = $('#dl');
+  if(dl) dl.onclick = async ()=>{
+    dl.textContent = 'собираю…';
+    const md = await fetch('/api/export',{method:'POST',
+      headers:{'content-type':'application/json'}, body:JSON.stringify(lastRun)}).then(x=>x.text());
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([md], {type:'text/markdown;charset=utf-8'}));
+    a.download = 'отчёт-проверки.md';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    dl.textContent = 'Скачать отчёт .md';
+  };
+  wire();
+}
+
+const drop = $('#drop'), input = $('#file');
+drop.onclick = ()=>input.click();
+input.onchange = ()=>{ if(input.files.length){ markFiles([...input.files]); runFiles([...input.files]); } };
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',ev=>{
+  const files=[...ev.dataTransfer.files]; if(files.length){ markFiles(files); runFiles(files); }});
+function markFiles(files){
+  drop.classList.add('has');
+  drop.innerHTML = `<b>Ваши файлы</b>${files.map(f=>f.name).join('<br>')}
+    <input type="file" id="file" multiple hidden>`;
+  const i = drop.querySelector('#file');
+  i.onchange = ()=>{ if(i.files.length){ markFiles([...i.files]); runFiles([...i.files]); } };
+}
+
+// ── генератор артефактов с известными дефектами
+fetch('/api/kinds').then(r=>r.json()).then(kinds=>{
+  $('#gkind').innerHTML = kinds.map(k=>`<option value="${k.id}">${k.title} — ${k.about}</option>`).join('');
+});
+$('#gbtn').onclick = async ()=>{
+  const btn = $('#gbtn'); btn.disabled = true; btn.textContent = 'генерирую…';
+  $('#out').innerHTML = '<div class="panel-h"><span class="label">Отчёт</span></div><div class="spin">генерирую файл и проверяю…</div>';
+  document.querySelectorAll('.ex-btn').forEach(b=>b.classList.remove('on'));
+  const body = {kind: $('#gkind').value, defects: +$('#gnum').value || 3};
+  const d = await fetch('/api/generate',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify(body)}).then(r=>r.json());
+  btn.disabled = false; btn.textContent = 'Сгенерировать и проверить';
+  if(d.error){ render({error:d.error}); return; }
+  render(d.result, null, d.compare, d.generated);
+};
+
+boot();
+</script>

@@ -105,7 +105,10 @@ def check(inputs: dict[str, str]) -> Report:
         key, value = key.strip(), value.strip()
         # комментарий той же строки или строки над ней - место, где живёт пояснение
         own_comment = raw.split("#", 1)[1].strip() if "#" in raw.split("=", 1)[-1] else ""
-        above = lines[i - 2].strip() if i >= 2 else ""
+        # Комментарий над строкой засчитываем, только если он относится
+        # именно к ней. Шапка файла в первой строке пояснением к порту
+        # не является - иначе первая же настройка считается описанной.
+        above = lines[i - 2].strip() if i >= 3 else ""
         comment = " ".join(x for x in (own_comment, above if above.startswith("#") else "") if x)
         where = f"{env_name}:{i}"
 
