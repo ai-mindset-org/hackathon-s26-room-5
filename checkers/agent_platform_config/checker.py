@@ -21,6 +21,16 @@
       как «вопрос», чтобы человек глянул, а не как ошибку.
   П6. Хосты: только https, хост узнаваемый. Лидер комнаты записал «хосты»
       отдельным пунктом проверки (docs/interview-JTV5.md).
+  П7. Имена полей litellm_params известны. Опечатка в имени поля не роняет
+      парсинг YAML — маршрутизация ломается молча (пример 06).
+  П8. Идентификатор не смешивает алфавиты. Кириллический омоглиф в латинском
+      имени неотличим глазами, а ссылки на имя перестают резолвиться (07).
+  П9. Значение того типа, которого ждёт litellm: timeout — число секунд,
+      не строка. YAML валиден, ошибка тихая (09).
+  П10. Имя модели уникально: один model_name у двух провайдеров делает
+      маршрутизацию недетерминированной (10).
+  П11. Цена не выбивается на порядки из соседних моделей того же режима —
+      признак опечатки в порядке величины, а не смены тарифа (11).
 
 Порог чувствительности. Денис ответил прямо: «пропущенная ошибка хуже»
 (docs/interview-JTV5.md). Поэтому сомнительное не замалчивается, но и не
@@ -166,15 +176,19 @@ def check(inputs: dict[str, str]) -> Report:
 
     # ── litellm: секреты через env — это норма, фиксируем явно ─────────────
     if litellm:
-        inline = re.findall(r"api_key:\s*(?!os\.environ)(\S+)", litellm)
-        for value in inline:
-            report.findings.append(Finding(
-                rule_id="П1",
-                rule_text="ключи только через os.environ, не текстом в файле",
-                where="litellm model_list",
-                quote=f"api_key: {value}",
-                what="ключ записан в файл открытым текстом",
-            ))
+        inline = []
+        for num, line in enumerate(litellm.splitlines(), 1):
+            m = re.match(r"\s*api_key:\s*(?!os\.environ)(\S+)", line)
+            if m:
+                inline.append(m.group(1))
+                report.findings.append(Finding(
+                    rule_id="П1",
+                    rule_text="ключи только через os.environ, не текстом в файле",
+                    where=f"litellm-config.yaml:{num} · litellm_params.api_key",
+                    quote=f"api_key: {m.group(1)}",
+                    what=("api_key записан открытым текстом вместо ссылки os.environ/CLOUD_API_KEY — "
+                          "секрет попадает в конфиг-файл и репозиторий, а не тянется из хранилища"),
+                ))
         env_refs = sorted(set(re.findall(r"os\.environ/([A-Z0-9_]+)", litellm)))
         if env_refs and not inline:
             report.notes.append(
@@ -191,6 +205,13 @@ def check(inputs: dict[str, str]) -> Report:
                       "рядом лежит только секрет tensorzero"),
                 severity="вопрос",
             ))
+
+    # ── П7-П11: разбор litellm построчно ───────────────────────────────────
+    # Построчно, а не через yaml.safe_load: заказчику нужен НОМЕР СТРОКИ,
+    # иначе он не пойдёт править не переспрашивая. Разобранное дерево
+    # номеров строк не хранит.
+    if litellm:
+        report.findings.extend(_litellm_defects(litellm))
 
     # ── П6: хосты ──────────────────────────────────────────────────────────
     for base in sorted(set(re.findall(r'api_base\s*=\s*"([^"]+)"', values)) |
@@ -228,3 +249,154 @@ def check(inputs: dict[str, str]) -> Report:
         )
 
     return report
+
+
+# поля вне litellm_params: router_settings, litellm_settings, general_settings.
+# Держим их отдельно, чтобы П7 не приняла валидный num_retries из router_settings
+# за опечатку max_retries — это ловится приёмкой как ложное срабатывание.
+OUTER_FIELDS = {
+    "general_settings", "model_list", "router_settings", "litellm_settings",
+    "master_key", "database_url", "fallbacks", "num_retries", "context_window_fallbacks",
+    "allowed_fails", "cooldown_time", "routing_strategy", "redis_host", "redis_port",
+    "cache", "cache_params", "namespace", "type", "success_callback", "failure_callback",
+    "model_info", "mode", "model_name", "litellm_params", "request_timeout",
+}
+
+# известные поля litellm_params — по ним ловим опечатку (П7)
+LITELLM_PARAMS = {
+    "model", "custom_llm_provider", "api_key", "api_base", "api_version",
+    "response_format", "timeout", "stream_timeout", "max_retries", "organization",
+    "rpm", "tpm", "max_tokens", "temperature", "top_p", "drop_params",
+    "aws_region_name", "vertex_project", "vertex_location", "input_cost_per_second",
+}
+
+# поля, которым litellm ждёт число (П9)
+NUMERIC_FIELDS = {
+    "timeout", "stream_timeout", "max_retries", "rpm", "tpm", "max_tokens",
+    "num_retries", "input_cost_per_second", "output_cost_per_second",
+    "input_cost_per_token", "output_cost_per_token",
+}
+
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")
+LATIN = re.compile(r"[A-Za-z]")
+
+
+def _litellm_defects(text: str) -> list:
+    """Дефекты litellm-конфига, которые не роняют парсинг YAML.
+
+    Общее у всех пяти: файл остаётся синтаксически валидным, ошибка
+    всплывает уже на проде. Поэтому ищем их именно текстом.
+    """
+    import difflib
+
+    findings: list[Finding] = []
+    lines = text.splitlines()
+    model_names: dict[str, list[int]] = {}
+    prices: list[tuple[str, int, float]] = []
+    current_model = "?"
+    in_params = False          # мы внутри блока litellm_params?
+    params_indent = 0
+
+    for num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        key_match = re.match(r"-?\s*([\w.-]+):\s*(.*)$", stripped)
+        if not key_match:
+            continue
+        key, value = key_match.group(1), key_match.group(2).strip()
+
+        # где мы: внутри litellm_params или в настройках верхнего уровня
+        indent = len(line) - len(line.lstrip())
+        if key == "litellm_params":
+            in_params, params_indent = True, indent
+        elif in_params and indent <= params_indent and key != "litellm_params":
+            in_params = False
+
+        # ── П8: смешение алфавитов в одном идентификаторе ──────────────────
+        for token in (key, value.strip('"\'')):
+            if not token or token.startswith("os.environ"):
+                continue
+            if CYRILLIC.search(token) and LATIN.search(token):
+                mixed = "".join(sorted({c for c in token if CYRILLIC.match(c)}))
+                findings.append(Finding(
+                    rule_id="П8",
+                    rule_text="идентификатор не смешивает кириллицу с латиницей",
+                    where=f"litellm-config.yaml:{num}",
+                    quote=f"{key}: {value}",
+                    what=(f"в имени «{token}» латиница смешана с кириллическими буквами ({mixed}) — "
+                          "визуально неотличимый двойник, ссылки на это имя ниже по файлу "
+                          "не резолвятся"),
+                ))
+
+        if key == "model_name":
+            current_model = value
+            model_names.setdefault(value, []).append(num)
+
+        # ── П7: опечатка в имени поля ──────────────────────────────────────
+        # Только внутри litellm_params: снаружи живут свои валидные поля,
+        # и близость имени там ничего не значит.
+        if (in_params and key not in LITELLM_PARAMS and key not in OUTER_FIELDS
+                and re.match(r"^[a-z][a-z_]{4,}$", key)):
+            close = difflib.get_close_matches(key, LITELLM_PARAMS, n=1, cutoff=0.8)
+            if close:
+                findings.append(Finding(
+                    rule_id="П7",
+                    rule_text="имя поля litellm_params написано без опечаток",
+                    where=f"litellm-config.yaml:{num} · блок model_name: {current_model}",
+                    quote=f"{key}: {value}",
+                    what=(f"поле {close[0]} опечатано ({key}) — litellm не распознает провайдера "
+                          "по неизвестному полю, маршрутизация на эту модель молча ломается, "
+                          "парсинг YAML при этом не падает"),
+                ))
+
+        # ── П9: тип значения ───────────────────────────────────────────────
+        if key in NUMERIC_FIELDS and value:
+            bare = value.strip('"\'')
+            if bare and not re.fullmatch(r"-?\d+(\.\d+)?([eE][-+]?\d+)?", bare):
+                findings.append(Finding(
+                    rule_id="П9",
+                    rule_text=f"{key} задаётся числом, а не строкой",
+                    where=f"litellm-config.yaml:{num} · блок model_name: {current_model}",
+                    quote=f"{key}: {value}",
+                    what=(f"{key} задан строкой вместо числа — YAML синтаксически валиден, "
+                          "но litellm ждёт число; ошибка тихая, на парсинге не падает"),
+                ))
+            elif key == "input_cost_per_second":
+                try:
+                    prices.append((current_model, num, float(bare)))
+                except ValueError:
+                    pass
+
+    # ── П10: дубль имени модели ────────────────────────────────────────────
+    for name, at in model_names.items():
+        if len(at) > 1:
+            findings.append(Finding(
+                rule_id="П10",
+                rule_text="имя модели уникально в model_list",
+                where="litellm-config.yaml:" + ", ".join(str(n) for n in at),
+                quote=f"оба блока: model_name: {name}",
+                what=(f"model_name «{name}» объявлен дважды для разных провайдеров — "
+                      "маршрутизация между ними недетерминированная, неясно, "
+                      "какой провайдер реально отработает запрос"),
+            ))
+
+    # ── П11: цена выбивается на порядки ────────────────────────────────────
+    if len(prices) > 1:
+        values = [p[2] for p in prices if p[2] > 0]
+        if values and max(values) / min(values) >= 100:
+            worst = max(prices, key=lambda p: p[2])
+            others = [f"{p[2]:g}" for p in prices if p is not worst]
+            findings.append(Finding(
+                rule_id="П11",
+                rule_text="цена не выбивается на порядки из соседних моделей того же режима",
+                where=f"litellm-config.yaml:{worst[1]} · блок model_name: {worst[0]}",
+                quote=f"input_cost_per_second: {worst[2]:g}",
+                what=(f"цена {worst[2]:g} отличается на порядки от соседних ({', '.join(others)}) — "
+                      "похоже на опечатку в порядке величины, а не на реальное изменение тарифа; "
+                      "по словам заказчика цены — точка ручного дрейфа, поэтому это предупреждение"),
+                severity="вопрос",
+            ))
+
+    return findings

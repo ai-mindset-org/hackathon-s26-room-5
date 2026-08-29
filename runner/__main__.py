@@ -36,11 +36,17 @@ ANCHOR_PATTERNS = (
 STOP_ANCHORS = {"expected.md", "input", "json", "md", "csv", "txt"}
 
 
+# в expected.md составитель дописывает к цитате пояснение вида
+# «  (было: 0.00015)» — это знание оригинала, которого у инструмента нет.
+# Факт — до пояснения, иначе сверка требует невозможного.
+ANCHOR_TAIL = re.compile(r"\s{2,}\((?:было|второй был|раньше)[^)]*\)\s*$")
+
+
 def anchors(expected: str) -> list[str]:
     found: list[str] = []
     for pattern in ANCHOR_PATTERNS:
         for match in re.findall(pattern, expected):
-            token = match.strip()
+            token = ANCHOR_TAIL.sub("", match.strip()).strip()
             if len(token) < 3 or token.lower() in STOP_ANCHORS:
                 continue
             if token not in found:
