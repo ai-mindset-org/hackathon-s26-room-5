@@ -113,6 +113,25 @@ HOST_TO_KEY = {
 }
 
 
+
+def _restore_magnitude(price: float, neighbours: list[float]) -> float | None:
+    """Какой была цена, если потеряли нули.
+
+    Опечатка в порядке величины - это сдвиг запятой, а не новый тариф.
+    Делим на степень десяти, пока цена не станет одного порядка с соседними
+    моделями того же режима. Что получилось, показываем человеку как гипотезу:
+    исправлять всё равно ему, но искать по прайсу уже не нужно.
+    """
+    ref = min(n for n in neighbours if n > 0) if any(n > 0 for n in neighbours) else 0
+    if not ref or price <= 0:
+        return None
+    for power in range(1, 8):
+        candidate = price / (10 ** power)
+        if 0.01 <= candidate / ref <= 100:
+            return candidate
+    return None
+
+
 def matches(inputs: dict[str, str]) -> bool:
     joined = "\n".join(inputs.values())
     return "tensorzero" in joined or "litellm_params" in joined or "model_list" in joined
@@ -516,14 +535,18 @@ def _litellm_defects(text: str) -> list:
         if values and max(values) / min(values) >= 100:
             worst = max(prices, key=lambda p: p[2])
             others = [f"{p[2]:g}" for p in prices if p is not worst]
+            was = _restore_magnitude(worst[2], [p[2] for p in prices if p is not worst])
+            hint = f"  (было: {was:g})" if was else ""
             findings.append(Finding(
                 rule_id="П11",
                 rule_text="цена не выбивается на порядки из соседних моделей того же режима",
                 where=f"litellm-config.yaml:{worst[1]} · блок model_name: {worst[0]}",
-                quote=f"input_cost_per_second: {worst[2]:g}",
+                quote=f"input_cost_per_second: {worst[2]:g}{hint}",
                 what=(f"цена {worst[2]:g} отличается на порядки от соседних ({', '.join(others)}) — "
                       "похоже на опечатку в порядке величины, а не на реальное изменение тарифа; "
-                      "по словам заказчика цены — точка ручного дрейфа, поэтому это предупреждение"),
+                      + (f"при потере {len(str(int(worst[2] / was))) - 1} нулей исходной была бы "
+                         f"{was:g}, и тогда цена сопоставима с соседней. " if was else "")
+                      + "по словам заказчика цены — точка ручного дрейфа, поэтому это предупреждение"),
                 severity="вопрос",
             ))
 
