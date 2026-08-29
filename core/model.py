@@ -35,6 +35,7 @@ class Report:
     artifacts: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)   # что модуль проверил и счёл нормой
     checked_by: list[str] = field(default_factory=list)  # какие модули реально отработали
+    runtime_only: list[str] = field(default_factory=list)   # что статически проверить нельзя
 
     def __bool__(self) -> bool:
         return bool(self.findings or self.artifacts)
