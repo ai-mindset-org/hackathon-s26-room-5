@@ -162,7 +162,7 @@ def mutate_inflated_price(text: str) -> tuple[str, dict]:
     }
 
 
-MUTATIONS = [
+YAML_MUTATIONS = [
     ("опечатка-в-провайдере", mutate_typo_provider_field),
     ("кириллица-омоглиф", mutate_cyrillic_model_name),
     ("секрет-в-открытую", mutate_inline_secret),
@@ -170,6 +170,158 @@ MUTATIONS = [
     ("дублирующаяся-модель", mutate_duplicate_model_name),
     ("устаревшая-цена", mutate_inflated_price),
 ]
+
+# Обратная совместимость: старые вызовы кода/тестов ждали имя MUTATIONS.
+MUTATIONS = YAML_MUTATIONS
+
+
+# ── мутации для tensorzero.toml (внутри k8s test-values.yaml) ───────────────
+#
+# По прямой просьбе заказчика (Дениса) — не произвольные баги, а по одному
+# на каждый жёсткий пункт его же чек-листа (examples/05-.../input/
+# критерии-проверки.md, он же checkers/agent_platform_config/checker.py:
+# П1, П2, П3, П4, П6). П5 (цены/курс) сюда не входит — заказчик сам считает
+# это не нарушением, а точкой ручного дрейфа, ломать тут нечего.
+#
+# Каждая мутация — одна точечная правка (одно значение), не разгром файла:
+# заказчик прямо просил не ломать конфиг «прям совсем».
+
+def mutate_toml_secret_missing(text: str) -> tuple[str, dict]:
+    """П1: ссылка env::VAR есть в toml, а сам VAR убран из additionalEnv.keys."""
+    env_vars = re.findall(r"env::([A-Z0-9_]+)", text)
+    if not env_vars:
+        raise MutationSkipped
+    target = env_vars[0]
+    pattern = re.compile(
+        rf"^[ \t]*-\s*name:\s*{re.escape(target)}\s*\n[ \t]*key:\s*{re.escape(target)}\s*\n",
+        re.M,
+    )
+    mutated, count = pattern.subn("", text, count=1)
+    if count == 0:
+        raise MutationSkipped
+    return mutated, {
+        "title": f"Секрет {target} убран из additionalEnv (П1)",
+        "where": "gateway.additionalEnv.keys",
+        "quote": f"env::{target}",
+        "what": (
+            f"tensorzero.toml ссылается на env::{target}, но запись в "
+            f"additionalEnv.keys удалена — переменная нигде не заведена, "
+            f"сервис не поднимется. Правило П1, единственная сегодня жёсткая "
+            f"проверка у заказчика."
+        ),
+    }
+
+
+def mutate_toml_wrong_provider_key(text: str) -> tuple[str, dict]:
+    """П2: ключ одного провайдера подставлен в блок другого.
+
+    Это не выдуманный класс ошибки — ровно так был найден реальный баг в
+    боевом конфиге заказчика (examples/05: yandex-модель с NOVITAAI_API_KEY).
+    """
+    blocks = list(re.finditer(
+        r"\[models\.[\w.-]+\.providers\.[\w-]+\]([\s\S]*?)(?=\n\s*\[|\Z)", text
+    ))
+    found = [(m, km.group(1)) for m in blocks
+             if (km := re.search(r"env::([A-Z0-9_]+)", m.group(1)))]
+    distinct = [(m, key) for m, key in found if key != found[0][1]]
+    if not distinct:
+        raise MutationSkipped
+    target_match, target_key = found[0]
+    _, intruder_key = distinct[0]
+    start, end = target_match.span(1)
+    mutated_body = target_match.group(1).replace(f"env::{target_key}", f"env::{intruder_key}", 1)
+    mutated = text[:start] + mutated_body + text[end:]
+    return mutated, {
+        "title": f"Ключ другого провайдера ({intruder_key}) подставлен вместо {target_key} (П2)",
+        "where": "models.*.providers.* → api_key_location",
+        "quote": f"env::{intruder_key}",
+        "what": (
+            f"модель берёт ключ {intruder_key}, а исходно использовала "
+            f"{target_key} — либо осознанный прокси, либо перепутанный ключ "
+            f"при copy-paste. Правило П2: сомнительно, но не всегда ошибка — "
+            f"это «вопрос», не жёсткое нарушение."
+        ),
+    }
+
+
+def mutate_toml_unused_model(text: str) -> tuple[str, dict]:
+    """П3: объявлена модель, которую не вызывает ни одна функция."""
+    match = re.search(r"^(\s*)\[functions\.", text, re.M)
+    if not match:
+        raise MutationSkipped
+    indent = match.group(1)
+    ghost = (
+        f"{indent}[models.ghost-unused-model]\n"
+        f'{indent}routing = ["ghost"]\n'
+        f"{indent}[models.ghost-unused-model.providers.ghost]\n"
+        f'{indent}type = "openai"\n'
+        f'{indent}api_base = "https://api.deepseek.com"\n'
+        f'{indent}model_name = "ghost-model"\n'
+        f'{indent}api_key_location = "env::DEEPSEEK_API_KEY"\n\n'
+    )
+    mutated = text[:match.start()] + ghost + text[match.start():]
+    return mutated, {
+        "title": "Модель объявлена, но не используется ни одной функцией (П3)",
+        "where": "models.ghost-unused-model",
+        "quote": "[models.ghost-unused-model]",
+        "what": (
+            "блок модели добавлен, но ни функция его не вызывает — лишний "
+            "блок в конфиге, ровно тот тип проблемы, что был в реальном "
+            "инциденте заказчика с лишним параметром. Правило П3."
+        ),
+    }
+
+
+def mutate_toml_broken_function_ref(text: str) -> tuple[str, dict]:
+    """П4: functions.*.variants.*.model ссылается на необъявленную модель."""
+    match = re.search(r'^(\s*model\s*=\s*")([\w.-]+)(")\s*$', text, re.M)
+    if not match:
+        raise MutationSkipped
+    original = match.group(2)
+    broken = original + "-missing"
+    mutated = text[:match.start()] + match.group(1) + broken + match.group(3) + text[match.end():]
+    return mutated, {
+        "title": f"Функция ссылается на необъявленную модель {broken} (П4)",
+        "where": "functions.*.variants.* → model",
+        "quote": f'model = "{broken}"',
+        "what": (
+            f"вариант функции вызывает модель {broken}, а блок "
+            f"[models.{broken}] нигде не объявлен — битая ссылка. Правило П4."
+        ),
+    }
+
+
+def mutate_toml_insecure_host(text: str) -> tuple[str, dict]:
+    """П6: обращение к провайдеру идёт по http вместо https."""
+    match = re.search(r'api_base\s*=\s*"https://([^"]+)"', text)
+    if not match:
+        raise MutationSkipped
+    old = match.group(0)
+    new = old.replace("https://", "http://", 1)
+    mutated = text.replace(old, new, 1)
+    return mutated, {
+        "title": "Обращение к провайдеру по http вместо https (П6)",
+        "where": "models.*.providers.* → api_base",
+        "quote": f"http://{match.group(1)}",
+        "what": (
+            f"хост {match.group(1)} указан по http — ключ и запросы уходят "
+            "незашифрованными. Правило П6."
+        ),
+    }
+
+
+TOML_MUTATIONS = [
+    ("секрет-не-в-env", mutate_toml_secret_missing),
+    ("чужой-ключ-провайдера", mutate_toml_wrong_provider_key),
+    ("неиспользуемая-модель", mutate_toml_unused_model),
+    ("битая-ссылка-функции", mutate_toml_broken_function_ref),
+    ("http-вместо-https", mutate_toml_insecure_host),
+]
+
+
+def is_toml_config(text: str) -> bool:
+    """Отличаем tensorzero.toml (внутри test-values.yaml) от litellm-config.yaml."""
+    return "tensorzero.toml" in text or bool(re.search(r"^\s*\[models\.", text, re.M))
 
 
 def build_expected_md(details: dict) -> str:
@@ -193,9 +345,10 @@ def main() -> None:
     args = parser.parse_args()
 
     base_text = args.config.read_text(encoding="utf-8")
+    mutations = TOML_MUTATIONS if is_toml_config(base_text) else YAML_MUTATIONS
 
     written, skipped = 0, []
-    for offset, (slug_suffix, mutate_fn) in enumerate(MUTATIONS):
+    for offset, (slug_suffix, mutate_fn) in enumerate(mutations):
         try:
             mutated_text, details = mutate_fn(base_text)
         except MutationSkipped:
@@ -213,7 +366,7 @@ def main() -> None:
 
     if skipped:
         print(f"пропущено (паттерн не найден во входном файле): {', '.join(skipped)}")
-    print(f"итого сгенерировано кейсов: {written}/{len(MUTATIONS)}")
+    print(f"итого сгенерировано кейсов: {written}/{len(mutations)}")
 
 
 if __name__ == "__main__":

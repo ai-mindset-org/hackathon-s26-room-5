@@ -1,0 +1,305 @@
+tensorzero:
+  gateway:
+    image:
+      pullSecret: "registrysecret"
+    resources:
+      requests:
+        cpu: "0.25"
+        memory: "0.5Gi"
+      limits:
+        cpu: "0.25"
+        memory: "0.5Gi"
+    additionalEnv:
+      secretName: "tensorzero-test-secret"
+      keys:
+        - name: TENSORZERO_POSTGRES_URL
+          key: TENSORZERO_POSTGRES_URL
+        - name: OPENROUTER_API_KEY
+          key: OPENROUTER_API_KEY
+        - name: NOVITAAI_API_KEY
+          key: NOVITAAI_API_KEY
+        - name: DEEPSEEK_API_KEY
+          key: DEEPSEEK_API_KEY
+        - name: SILICONFLOW_API_KEY
+          key: SILICONFLOW_API_KEY
+        - name: CLOUDRU_API_KEY
+          key: CLOUDRU_API_KEY
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: worker-3d8c040c4
+
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: node-role.185a131f2.example/worker-3d8c040c4
+              operator: Exists
+    ingress:
+      enabled: false
+  ui:
+    deploy: true
+    image:
+      pullSecret: "registrysecret"
+    additionalEnv:
+      secretName: "tensorzero-test-secret"
+      keys:
+        - name: TENSORZERO_POSTGRES_URL
+          key: TENSORZERO_POSTGRES_URL
+        - name: TENSORZERO_GATEWAY_URL
+          key: TENSORZERO_GATEWAY_URL
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: worker-3d8c040c4
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: node-role.185a131f2.example/worker-3d8c040c4
+              operator: Exists
+
+    ingress:
+      className: nginx
+      annotations:
+        kubernetes.io/ingress.class: "nginx"
+        nginx.ingress.kubernetes.io/auth-signin: https://$host/dex-authenticator/sign_in
+        nginx.ingress.kubernetes.io/auth-url: https://tensorzero-dex-authenticator.3d8c040c4-test.svc.cluster.local/dex-authenticator/auth
+        nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User,X-Auth-Request-Email
+      hosts:
+      - host: tensorzero.linkis-ai-test.k8s.0a7632f290.example
+        paths:
+          - path: /
+            pathType: Prefix
+      tls:
+        - secretName: tensorzero-ui-tls
+          hosts:
+            - tensorzero.linkis-ai-test.k8s.0a7632f290.example
+  configMap:
+    data:
+      tensorzero.toml: |
+        [gateway]
+        bind_address = "0.0.0.0:3000"
+        observability.enabled = true
+        auth.enabled = true
+
+        [models.openrouter-deepseek-v4-flash]
+        routing = ["openrouter"]
+        [models.openrouter-deepseek-v4-flash.providers.openrouter]
+        type = "openai"
+        api_base = "https://openrouter.ai/api/v1"
+        model_name = "deepseek/deepseek-v4-flash"
+        api_key_location = "env::OPENROUTER_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 0.09},
+            {pointer = "/usage/completion_tokens", cost_per_million = 0.18}
+        ]
+
+        [models.yandex-deepseek-v4-flash]
+        routing = ["yandex"]
+        [models.yandex-deepseek-v4-flash.providers.yandex]
+        type = "openai"
+        model_name = "gpt://b048719784e0da323df5/deepseek-v4-flash/latest"
+        api_base = "https://ai.api.cloud.yandex.net/v1"
+        api_key_location = "env::NOVITAAI_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 4},
+            {pointer = "/usage/completion_tokens", cost_per_million = 6.6},
+            {pointer = "/usage/prompt_tokens_details/cached_tokens", cost_per_million = -3}
+        ]
+
+        # Thinking is DeepSeek's default; set explicitly so it doesn't depend on it.
+        [models.deepseek-deepseek-v4-flash]
+        routing = ["deepseek"]
+        [models.deepseek-deepseek-v4-flash.providers.deepseek]
+        type = "openai"
+        model_name = "deepseek-v4-flash"
+        api_base = "https://api.deepseek.com"
+        api_key_location = "env::DEEPSEEK_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        extra_body = [
+            { pointer = "/thinking", value = { type = "enabled" } }
+        ]
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 0.286},
+            {pointer = "/usage/completion_tokens", cost_per_million = 0.858},
+            {pointer = "/usage/prompt_tokens_details/cached_tokens", cost_per_million = -0.2769}
+        ]
+
+        # DeepSeek requires thinking.type=disabled; reasoning_effort alone won't disable it.
+        # Do not add reasoning_effort here — DeepSeek rejects it combined with thinking.
+        [models.deepseek-deepseek-v4-flash-no-reasoning]
+        routing = ["deepseek"]
+        [models.deepseek-deepseek-v4-flash-no-reasoning.providers.deepseek]
+        type = "openai"
+        model_name = "deepseek-v4-flash"
+        api_base = "https://api.deepseek.com"
+        api_key_location = "env::DEEPSEEK_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        extra_body = [
+            { pointer = "/thinking", value = { type = "disabled" } }
+        ]
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 0.286},
+            {pointer = "/usage/completion_tokens", cost_per_million = 0.858},
+            {pointer = "/usage/prompt_tokens_details/cached_tokens", cost_per_million = -0.2769}
+        ]
+
+        # SiliconFlow: enable_thinking defaults to true; set explicitly so it doesn't depend on it.
+        [models.siliconflow-deepseek-v4-flash]
+        routing = ["siliconflow"]
+        [models.siliconflow-deepseek-v4-flash.providers.siliconflow]
+        type = "openai"
+        api_base = "https://api.siliconflow.com/v1"
+        model_name = "deepseek-ai/DeepSeek-V4-Flash"
+        api_key_location = "env::SILICONFLOW_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        extra_body = [
+            { pointer = "/enable_thinking", value = true }
+        ]
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 0.13},
+            {pointer = "/usage/completion_tokens", cost_per_million = 0.28},
+            {pointer = "/usage/prompt_tokens_details/cached_tokens", cost_per_million = -0.102}
+        ]
+
+        # SiliconFlow disables reasoning via top-level enable_thinking=false, not thinking.type.
+        [models.siliconflow-deepseek-v4-flash-no-reasoning]
+        routing = ["siliconflow"]
+        [models.siliconflow-deepseek-v4-flash-no-reasoning.providers.siliconflow]
+        type = "openai"
+        api_base = "https://api.siliconflow.com/v1"
+        model_name = "deepseek-ai/DeepSeek-V4-Flash"
+        api_key_location = "env::SILICONFLOW_API_KEY"
+        timeouts = { non_streaming.total_ms = 60000, streaming.ttft_ms = 30000 }
+        extra_body = [
+            { pointer = "/enable_thinking", value = false }
+        ]
+        cost = [
+            {pointer = "/usage/prompt_tokens", cost_per_million = 0.13},
+            {pointer = "/usage/completion_tokens", cost_per_million = 0.28},
+            {pointer = "/usage/prompt_tokens_details/cached_tokens", cost_per_million = -0.102}
+        ]
+
+        # --- Embeddings ---
+        [embedding_models.qwen3-embedding-0-6b]
+        routing = ["siliconflow", "cloud-ru"]
+
+        [embedding_models.qwen3-embedding-0-6b.providers.siliconflow]
+        type = "openai"
+        api_base = "https://api.siliconflow.com/v1"
+        model_name = "Qwen/Qwen3-Embedding-0.6B"
+        api_key_location = "env::SILICONFLOW_API_KEY"
+
+        [embedding_models.qwen3-embedding-0-6b.providers.cloud-ru]
+        type = "openai"
+        api_base = "https://foundation-models.api.cloud.ru/v1"
+        model_name = "Qwen/Qwen3-Embedding-0.6B"
+        api_key_location = "env::CLOUDRU_API_KEY"
+
+        [models.ghost-unused-model]
+
+        routing = ["ghost"]
+
+        [models.ghost-unused-model.providers.ghost]
+
+        type = "openai"
+
+        api_base = "https://api.deepseek.com"
+
+        model_name = "ghost-model"
+
+        api_key_location = "env::DEEPSEEK_API_KEY"
+
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash]
+        type = "chat"
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash.variants.deepseek]
+        type = "chat_completion"
+        model = "deepseek-deepseek-v4-flash"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash.variants.siliconflow]
+        type = "chat_completion"
+        model = "siliconflow-deepseek-v4-flash"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash.experimentation]
+        type = "static_weights"
+        candidate_variants = {"deepseek" = 1.0}
+        fallback_variants = ["siliconflow"]
+
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash]
+        type = "chat"
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash.variants.deepseek]
+        type = "chat_completion"
+        model = "deepseek-deepseek-v4-flash"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash.variants.siliconflow]
+        type = "chat_completion"
+        model = "siliconflow-deepseek-v4-flash"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash.variants.yandex]
+        type = "chat_completion"
+        model = "yandex-deepseek-v4-flash"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash.experimentation]
+        type = "static_weights"
+        candidate_variants = {"deepseek" = 1.0}
+        fallback_variants = ["siliconflow", "yandex"]
+
+
+        # --- Same functions, reasoning disabled ---
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash-no-reasoning]
+        type = "chat"
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash-no-reasoning.variants.deepseek]
+        type = "chat_completion"
+        model = "deepseek-deepseek-v4-flash-no-reasoning"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash-no-reasoning.variants.siliconflow]
+        type = "chat_completion"
+        model = "siliconflow-deepseek-v4-flash-no-reasoning"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-deepseek-v4-flash-no-reasoning.experimentation]
+        type = "static_weights"
+        candidate_variants = {"deepseek" = 1.0}
+        fallback_variants = ["siliconflow"]
+
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash-no-reasoning]
+        type = "chat"
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash-no-reasoning.variants.deepseek]
+        type = "chat_completion"
+        model = "deepseek-deepseek-v4-flash-no-reasoning"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash-no-reasoning.variants.siliconflow]
+        type = "chat_completion"
+        model = "siliconflow-deepseek-v4-flash-no-reasoning"
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash-no-reasoning.variants.yandex]
+        type = "chat_completion"
+        model = "yandex-deepseek-v4-flash"
+        reasoning_effort = "none"  # Yandex disables reasoning via this, not thinking.type
+        retries = { num_retries = 1, max_delay_s = 5 }
+
+        [functions.deepseek-siliconflow-yandex-deepseek-v4-flash-no-reasoning.experimentation]
+        type = "static_weights"
+        candidate_variants = {"deepseek" = 1.0}
+        fallback_variants = ["siliconflow", "yandex"]
