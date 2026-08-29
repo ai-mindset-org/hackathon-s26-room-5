@@ -17,9 +17,9 @@ import re
 
 import sys
 from pathlib import Path as _P
-sys.path.insert(0, str(_P(__file__).resolve().parent.parent.parent))
-from core.model import Report  # noqa: E402
+sys.path.insert(0, str(_P(__file__).resolve().parent.parent))
 from checkers._finding import Finding  # noqa: E402
+from core.model import Report          # noqa: E402
 
 NAME = "anonymizer"
 TITLE = "Обезличивание и обратный маппинг"
@@ -31,7 +31,10 @@ EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 PHONE = re.compile(r"(?<![\w-])(?:\+7|8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?![\d-])")
 EXT = re.compile(r"(?:добавочный|доб\.?|ext\.?)\s*(\d{2,5})", re.I)
 # Русское ФИО: Имя Фамилия, оба с заглавной, кириллица, в любом падеже.
-PERSON = re.compile(r"\b[А-ЯЁ][а-яё]{1,}(?:ий|ой|ей|ов|ев|ём|ом|ом)?\s+[А-ЯЁ][а-яё]{2,}\b")
+# Имя и фамилия разделены пробелом, но НЕ переводом строки: иначе
+# заголовок «## Требования» и первое слово следующего абзаца
+# склеиваются в несуществующего человека.
+PERSON = re.compile(r"\b[А-ЯЁ][а-яё]{1,}(?:ий|ой|ей|ов|ев|ём|ом)?[ \u00A0]+[А-ЯЁ][а-яё]{2,}\b")
 
 # Слова, которые начинают предложение и не являются именем.
 NOT_A_NAME = {
@@ -46,10 +49,35 @@ ENDINGS = ("ой", "ей", "ом", "ым", "ам", "ах", "ы", "и", "а", "у
 
 
 def matches(inputs: dict[str, str]) -> bool:
+    """Берёмся за текст, где есть хоть что-то персональное.
+
+    Раньше требовались email или телефон - и текст, где люди названы только
+    по имени и добавочному, молча проходил мимо обезличивания. Это дыра:
+    фамилия уходит наружу ровно так же, как почта.
+    """
     if not any(n.lower().endswith((".txt", ".md")) for n in inputs):
         return False
-    text = "\n".join(inputs.values())
-    return bool(EMAIL.search(text) or PHONE.search(text))
+    # файл правил лежит рядом с артефактом - работаем с артефактом,
+    # а не отказываемся от всей папки
+    name = _pick_artifact(inputs)
+    if not name:
+        return False
+    text = inputs[name]
+    if EMAIL.search(text) or PHONE.search(text) or EXT.search(text):
+        return True
+    blocked = [(m.start(), m.end()) for m in KEEP.finditer(text)]
+    return bool(_find_persons(text, blocked))
+
+
+# Файл с правилами - не артефакт: его обезличивать нельзя, иначе инструмент
+# вычистит примеры из самой инструкции и объявит это работой.
+RULES_HINTS = ("rule", "правил", "checklist", "чеклист", "чек-лист", "политик", "инструкц")
+
+
+def _pick_artifact(inputs: dict[str, str]) -> str:
+    texts = [n for n in inputs if n.lower().endswith((".txt", ".md"))]
+    real = [n for n in texts if not any(h in n.lower() for h in RULES_HINTS)]
+    return (real or texts or [""])[0]
 
 
 def _stem(word: str) -> str:
@@ -149,7 +177,7 @@ def restore(anon_text: str, mapping: dict) -> str:
 
 def check(inputs: dict[str, str]) -> Report:
     rep = Report()
-    name = next((n for n in inputs if n.lower().endswith((".txt", ".md"))), None)
+    name = _pick_artifact(inputs)
     if not name:
         rep.runtime_only.append("не нашёл текстовый файл")
         return rep
