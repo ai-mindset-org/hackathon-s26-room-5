@@ -93,7 +93,8 @@ def check(inputs: dict[str, str]) -> Report:
         ))
     if needed and not (needed - secret_keys):
         report.notes.append(
-            f"П1: все переменные toml заведены в секретах ({len(needed)} шт.) — сервис стартует"
+            f"П1: ключи, заведённые в additionalEnv.keys, — их {len(secret_keys)}, все на месте; "
+            f"все {len(needed)} переменных из toml среди них — сервис стартует"
         )
 
     # ключи в секретах, которых нет в toml, — НЕ нарушение: их читает само
@@ -118,8 +119,8 @@ def check(inputs: dict[str, str]) -> Report:
             report.findings.append(Finding(
                 rule_id="П2",
                 rule_text="ключ провайдера соответствует хосту, на который ходит модель",
-                where=f"models.{model}.providers.{provider}",
-                quote=f'api_base = "{base}" · api_key_location = "env::{key}"',
+                where=f"[models.{model}.providers.{provider}]",
+                quote=f"api_base = {base} · api_key_location = env::{key}",
                 what=(f"модель ходит на {host}, а ключ взят из {key} — "
                       f"либо {host} работает через прокси, либо подставлен чужой ключ"),
                 severity="вопрос",
@@ -132,7 +133,7 @@ def check(inputs: dict[str, str]) -> Report:
         report.findings.append(Finding(
             rule_id="П3",
             rule_text="объявленная модель используется хотя бы одной функцией",
-            where=f"models.{model}",
+            where=f"[models.{model}]",
             quote=f"[models.{model}]",
             what=f"модель {model} объявлена, но ни одна функция её не вызывает — лишний блок в конфиге",
         ))
@@ -212,6 +213,63 @@ def check(inputs: dict[str, str]) -> Report:
     # номеров строк не хранит.
     if litellm:
         report.findings.extend(_litellm_defects(litellm))
+
+    # ── что проверено и признано нормой ────────────────────────────────────
+    # Без этого раздела «не поймали» неотличимо от «не проверяли»,
+    # а заказчик читает отчёт именно на этот вопрос.
+    if re.search(r"cost_per_million\s*=\s*-", values):
+        report.notes.append(
+            "отрицательная цена за cached_tokens — легальная скидка на кэш, а не ошибка"
+        )
+    for secret_name in re.findall(r'pullSecret:\s*"([^"]+)"', values):
+        report.notes.append(
+            f'pullSecret: "{secret_name}" — имя секрета, а не секрет: значение лежит в хранилище'
+        )
+    bind = re.search(r'bind_address\s*=\s*"([^"]+)"', values)
+    if bind:
+        auth_on = re.search(r"auth\.enabled\s*=\s*true", values)
+        if auth_on:
+            report.notes.append(
+                f'bind_address = "{bind.group(1)}" при auth.enabled = true — норма для кластера, '
+                "наружу порт не выставлен"
+            )
+        else:
+            report.findings.append(Finding(
+                rule_id="П2",
+                rule_text="сервис не слушает 0.0.0.0 без включённой авторизации",
+                where="[gateway]",
+                quote=f'bind_address = "{bind.group(1)}"',
+                what="гейтвей слушает все интерфейсы, а auth.enabled не выставлен",
+            ))
+
+    # ── П12: модель без цены ───────────────────────────────────────────────
+    # Денис держит расходы по моделям в конфиге руками. Модель без цены
+    # молча не попадает в расчёт: деньги уходят, а в отчёте её нет.
+    #
+    # Цена живёт не в самой секции модели, а в её подсекции провайдера
+    # ([models.X.providers.Y]), поэтому тело модели собираем вместе со
+    # всеми подсекциями — иначе получаем ложное срабатывание на каждой
+    # модели разом (поймано приёмкой примера 05).
+    sections: dict[str, str] = {}
+    for match in re.finditer(r"\[((?:models|embedding_models)\.[\w.-]+)\]([\s\S]*?)(?=\n\s*\[|\Z)", values):
+        sections[match.group(1)] = match.group(2)
+
+    for full_name, body in sections.items():
+        kind, _, name = full_name.partition(".")
+        if "." in name:                    # подсекция провайдера — не отдельная модель
+            continue
+        own = body + "".join(
+            sub_body for sub_name, sub_body in sections.items()
+            if sub_name.startswith(f"{full_name}.")
+        )
+        if "cost" not in own:
+            report.findings.append(Finding(
+                rule_id="П12",
+                rule_text="у модели проставлена цена, иначе расходы по ней не считаются",
+                where=f"[{full_name}]",
+                quote=f"[{full_name}]",
+                what=f"цена не проставлена, расходы по {name} не считаются",
+            ))
 
     # ── П6: хосты ──────────────────────────────────────────────────────────
     for base in sorted(set(re.findall(r'api_base\s*=\s*"([^"]+)"', values)) |

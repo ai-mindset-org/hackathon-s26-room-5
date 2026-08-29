@@ -43,6 +43,13 @@ ANCHOR_TAIL = re.compile(r"\s{2,}\((?:было|второй был|раньше)
 
 
 def anchors(expected: str) -> list[str]:
+    # Преамбула expected.md — про то, откуда взялись правила («собраны
+    # из интервью 29.08»). Это метаданные составителя, а не факты
+    # проверяемого файла: требовать их от отчёта бессмысленно.
+    # Режем всё до первого раздела, если разделы вообще есть.
+    if re.search(r"^## ", expected, re.M):
+        expected = expected[re.search(r"^## ", expected, re.M).start():]
+
     found: list[str] = []
     for pattern in ANCHOR_PATTERNS:
         for match in re.findall(pattern, expected):
