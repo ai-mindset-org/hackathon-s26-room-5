@@ -352,6 +352,15 @@ def main() -> None:
     # с артефактом, а не оставаться знанием в головах (решение комнаты).
     rules_src = args.config.parent / "критерии-проверки.md"
 
+    # Второй файл пары (litellm ломаем — test-values кладём как есть, и
+    # наоборот): чекер сверяет конфиги МЕЖДУ СОБОЙ, одинокий артефакт
+    # рождает в каждом кейсе вопрос «секрет не приложен — проверить не с чем».
+    companions = [
+        p for p in args.config.parent.iterdir()
+        if p.is_file() and p.suffix in (".yaml", ".yml", ".toml")
+        and p.name != args.config.name
+    ]
+
     written, skipped = 0, []
     for offset, (slug_suffix, mutate_fn) in enumerate(mutations):
         try:
@@ -368,6 +377,9 @@ def main() -> None:
         if rules_src.is_file():
             (input_dir / rules_src.name).write_text(
                 rules_src.read_text(encoding="utf-8"), encoding="utf-8")
+        for comp in companions:
+            (input_dir / comp.name).write_text(
+                comp.read_text(encoding="utf-8"), encoding="utf-8")
         (case_dir / "expected.md").write_text(build_expected_md(details), encoding="utf-8")
         print(f"написано: examples/{case_dir.name}/")
         written += 1
