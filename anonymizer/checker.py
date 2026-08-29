@@ -57,6 +57,12 @@ def matches(inputs: dict[str, str]) -> bool:
     """
     if not any(n.lower().endswith((".txt", ".md")) for n in inputs):
         return False
+    # Конфиг или таблица рядом означают, что артефакт - не текст, а .md лежит
+    # как описание правил. Обезличивать его нечего: имя автора в критериях
+    # проверки не персональные данные клиента, а подпись под инструкцией.
+    if any(n.lower().endswith((".yaml", ".yml", ".env", ".csv", ".toml", ".ini"))
+           for n in inputs):
+        return False
     # файл правил лежит рядом с артефактом - работаем с артефактом,
     # а не отказываемся от всей папки
     name = _pick_artifact(inputs)
@@ -71,7 +77,8 @@ def matches(inputs: dict[str, str]) -> bool:
 
 # Файл с правилами - не артефакт: его обезличивать нельзя, иначе инструмент
 # вычистит примеры из самой инструкции и объявит это работой.
-RULES_HINTS = ("rule", "правил", "checklist", "чеклист", "чек-лист", "политик", "инструкц")
+RULES_HINTS = ("rule", "правил", "checklist", "чеклист", "чек-лист", "политик",
+               "инструкц", "критери", "expected", "ожидаем", "readme", "howto")
 
 
 def _pick_artifact(inputs: dict[str, str]) -> str:
