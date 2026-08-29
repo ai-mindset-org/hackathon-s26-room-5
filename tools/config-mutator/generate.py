@@ -347,6 +347,11 @@ def main() -> None:
     base_text = args.config.read_text(encoding="utf-8")
     mutations = TOML_MUTATIONS if is_toml_config(base_text) else YAML_MUTATIONS
 
+    # Файл правил, по которым живёт этот конфиг, лежит рядом с ним.
+    # Кладём копию в каждый сгенерированный кейс: правила должны ехать
+    # с артефактом, а не оставаться знанием в головах (решение комнаты).
+    rules_src = args.config.parent / "критерии-проверки.md"
+
     written, skipped = 0, []
     for offset, (slug_suffix, mutate_fn) in enumerate(mutations):
         try:
@@ -360,6 +365,9 @@ def main() -> None:
         input_dir = case_dir / "input"
         input_dir.mkdir(parents=True, exist_ok=True)
         (input_dir / args.config.name).write_text(mutated_text, encoding="utf-8")
+        if rules_src.is_file():
+            (input_dir / rules_src.name).write_text(
+                rules_src.read_text(encoding="utf-8"), encoding="utf-8")
         (case_dir / "expected.md").write_text(build_expected_md(details), encoding="utf-8")
         print(f"написано: examples/{case_dir.name}/")
         written += 1
