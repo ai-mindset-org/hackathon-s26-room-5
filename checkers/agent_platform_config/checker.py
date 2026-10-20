@@ -140,9 +140,26 @@ def matches(inputs: dict[str, str]) -> bool:
     return "tensorzero" in joined or "litellm_params" in joined or "model_list" in joined
 
 
+# Только форматы конфига. Документ с критериями рядом (.md) - не вход
+# для парсера: он тоже упоминает litellm в первых строках, и по нему
+# прогонялись все проверки разом, вплоть до обвинения имени заказчика
+# в кириллическом омоглифе.
+CONFIG_SUFFIXES = (".yaml", ".yml", ".toml", ".json", ".env")
+
+
 def _text(inputs: dict[str, str], needle: str) -> str:
-    for name, body in inputs.items():
-        if needle in name.lower() or needle in body[:400].lower():
+    """Тело конфига, где встречается needle. Ищем только среди конфигов.
+
+    Сначала по имени файла - это точнее. Потом по содержимому, но всё равно
+    только у файлов конфигового формата: markdown, txt и прочая документация
+    входом не считаются, сколько бы раз там ни стояло слово litellm.
+    """
+    configs = {n: b for n, b in inputs.items() if n.lower().endswith(CONFIG_SUFFIXES)}
+    for name, body in configs.items():
+        if needle in name.lower():
+            return body
+    for name, body in configs.items():
+        if needle in body[:400].lower():
             return body
     return ""
 
